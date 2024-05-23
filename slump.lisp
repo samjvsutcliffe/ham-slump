@@ -122,12 +122,12 @@
       (let ((mass-scale 1d4))
         (setf (cl-mpm::sim-mass-scale sim) mass-scale)
         (setf (cl-mpm:sim-damping-factor sim)
-              0.7d0
-              ;; (* 0.00000d0
-              ;;    (cl-mpm::sim-mass-scale sim)
-              ;;    (cl-mpm/setup::estimate-critical-damping sim))
+              ;; 0.7d0
+              (* 100d0
+                 (cl-mpm::sim-mass-scale sim)
+                 (cl-mpm/setup::estimate-critical-damping sim))
               ))
-      (let ((dt-scale 0.9d0))
+      (let ((dt-scale 0.5d0))
         (setf
          (cl-mpm:sim-dt sim)
          (* dt-scale h
@@ -201,24 +201,24 @@
   (when refine
     (setf *refine* (parse-integer (uiop:getenv "REFINE")))  
     ))
-(defmethod cl-mpm::update-node-forces ((sim cl-mpm::mpm-sim))
-  (with-accessors ((damping cl-mpm::sim-damping-factor)
-                   (mass-scale cl-mpm::sim-mass-scale)
-                   (mesh cl-mpm::sim-mesh)
-                   (dt cl-mpm::sim-dt))
-      sim
-    (cl-mpm::iterate-over-nodes
-     mesh
-     (lambda (node)
-       (cl-mpm::calculate-forces-cundall node damping dt mass-scale)))))
+;; (defmethod cl-mpm::update-node-forces ((sim cl-mpm::mpm-sim))
+;;   (with-accessors ((damping cl-mpm::sim-damping-factor)
+;;                    (mass-scale cl-mpm::sim-mass-scale)
+;;                    (mesh cl-mpm::sim-mesh)
+;;                    (dt cl-mpm::sim-dt))
+;;       sim
+;;     (cl-mpm::iterate-over-nodes
+;;      mesh
+;;      (lambda (node)
+;;        (cl-mpm::calculate-forces-cundall node damping dt mass-scale)))))
 
 (defun setup ()
   (let* ((mesh-size 20)
          (mps-per-cell 2)
          (slope 0d0)
          (shelf-height 400)
-         (shelf-aspect 4)
-         (runout-aspect 2)
+         (shelf-aspect 1)
+         (runout-aspect 1)
          (shelf-length (* shelf-height shelf-aspect))
          (shelf-end-height (+ shelf-height (* (- slope) shelf-length)))
          (shelf-height-terminus shelf-height)
@@ -323,15 +323,16 @@
          (damp-steps 20)
          (dt-scale 0.5d0)
          (dt-0 0d0)
-		(damage-0
-		   (cl-mpm/mpi:mpi-sum
-			   (lparallel:pmap-reduce (lambda (mp)
-				   (*
-					  1d0
-					  (cl-mpm/particle::mp-mass mp)
-					  (cl-mpm/particle::mp-damage mp)))
-				                        #'+ (cl-mpm:sim-mps *sim*)
-				                        :initial-value 0d0))))
+         (damping-0 (cl-mpm:sim-damping-factor *sim*))
+		     (damage-0
+		       (cl-mpm/mpi:mpi-sum
+			      (lparallel:pmap-reduce (lambda (mp)
+				                             (*
+					                            1d0
+					                            (cl-mpm/particle::mp-mass mp)
+					                            (cl-mpm/particle::mp-damage mp)))
+				                           #'+ (cl-mpm:sim-mps *sim*)
+				                           :initial-value 0d0))))
 
     (setf (cl-mpm:sim-dt *sim*) (cl-mpm/setup::estimate-elastic-dt *sim* :dt-scale dt-scale))
     (setf dt-0 (/ (cl-mpm:sim-dt *sim*) (sqrt (cl-mpm::sim-mass-scale *sim*))))
@@ -423,7 +424,10 @@
                               (cl-mpm::sim-mass-scale *sim*) 1d6)
                              ))))
                      (when (>= steps damp-steps)
-                       (setf (cl-mpm:sim-damping-factor *sim*) 0d0))
+                       (setf (cl-mpm:sim-damping-factor *sim*)
+                             0d0
+                             ;; (* 0.01d0 damping-0)
+                             ))
                      (print "calc adaptive")
                      (multiple-value-bind (dt-e substeps-e)
                          (cl-mpm:calculate-adaptive-time *sim* target-time :dt-scale dt-scale)
