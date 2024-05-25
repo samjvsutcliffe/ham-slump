@@ -26,7 +26,7 @@
   (let* ((sim (cl-mpm/setup::make-block
                (/ 1d0 e-scale)
                (mapcar (lambda (x) (* x e-scale)) size)
-               :sim-type 'cl-mpm/mpi::mpm-sim-mpi-nodes-damage
+               :sim-type 'cl-mpm/mpi::mpm-sim-usl-mpi-nodes-damage
                ))
          (h (cl-mpm/mesh:mesh-resolution (cl-mpm:sim-mesh sim)))
          (h-x (/ h 1d0))
@@ -41,7 +41,7 @@
              (init-stress 0.3d6)
              ;; (gf 100d0)
              ;; (ductility (estimate-ductility-jirsek2004 gf length-scale init-stress 1d9))
-             (ductility 6d0)
+             (ductility 8d0)
              )
         (format t "~F ~F ~A mp count"
                 e-scale
@@ -78,8 +78,8 @@
                 :fracture-energy 3000d0
                 :initiation-stress init-stress
 
-                :delay-time 1d2
-                :delay-exponent 3d0
+                :delay-time 1d3
+                :delay-exponent 2d0
                 :ductility ductility
                 :critical-damage 1d0;(- 1.0d0 1d-3)
                 :damage-domain-rate 0.9d0;This slider changes how GIMP update turns to uGIMP under damage
@@ -156,7 +156,7 @@
            sim
            (cl-mpm/utils:vector-from-list '(0d0 1d0 0d0))
            (cl-mpm/utils:vector-from-list (list 00d0 (* 2d0 h-y) 0d0))
-           1d9
+           (* 1d9 0.1d0)
            0.0d0))
         (setf (cl-mpm::sim-bcs-force-list sim)
               (list
@@ -213,11 +213,11 @@
 ;;        (cl-mpm::calculate-forces-cundall node damping dt mass-scale)))))
 
 (defun setup ()
-  (let* ((mesh-size 20)
+  (let* ((mesh-size 5)
          (mps-per-cell 2)
          (slope 0d0)
          (shelf-height 400)
-         (shelf-aspect 1)
+         (shelf-aspect 2)
          (runout-aspect 1)
          (shelf-length (* shelf-height shelf-aspect))
          (shelf-end-height (+ shelf-height (* (- slope) shelf-length)))
@@ -240,7 +240,7 @@
                                       (cos (- (* pi (/ undercut-angle 180d0))))
                                       (sin (- (* pi (/ undercut-angle 180d0))))
                                       0d0) '(3 1))))
-      (remove-sdf *sim* (lambda (p) (plane-point-sdf
+      (cl-mpm/setup::remove-sdf *sim* (lambda (p) (plane-point-sdf
                                      p
                                      normal
                                      (magicl:from-list (list shelf-length shelf-height 0)
@@ -249,7 +249,7 @@
     )
   (format t "MPs: ~D~%" (length (cl-mpm:sim-mps *sim*)))
                                         ;(loop for f in (uiop:directory-files (uiop:merge-pathnames* "./outframes/")) do (uiop:delete-file-if-exists f))
-  (loop for f in (uiop:directory-files (uiop:merge-pathnames* *output-directory* )) do (uiop:delete-file-if-exists f))
+  (loop for f in (uiop:directory-files (uiop:merge-pathnames* *output-directory*)) do (uiop:delete-file-if-exists f))
   (defparameter *run-sim* t)
   (defparameter *t* 0)
   (defparameter *oobf* 0)
@@ -270,12 +270,12 @@
        (destructuring-bind (x y z) domain
          (let ((dnew (list (mapcar (lambda (p)
                                      (if (< p 1d0)
-                                         (* p 1d0;(/ 2d0 2.5d0)
-                                            )
+                                         (* p (/ 2 3))
                                          p)) x)
                            y z)))
            (format t "Domain ~A ~A~%" (list x y z) dnew)
-           dnew))))))
+           dnew))))
+    (format t "Rank ~D - Sim MPs: ~a~%" rank (length (cl-mpm:sim-mps sim)))))
 
 (defun mpi-loop ()
   (format t "Starting mpi~%")
@@ -319,21 +319,26 @@
          (collapse-mass-scale 1d0)
          (dt (cl-mpm:sim-dt *sim*))
          (substeps (floor target-time dt))
-         (settle-steps 30)
-         (damp-steps 20)
+         (settle-steps 45)
+         (damp-steps 40)
          (dt-scale 0.5d0)
          (dt-0 0d0)
-         (damping-0 (cl-mpm:sim-damping-factor *sim*))
-		     (damage-0
-		       (cl-mpm/mpi:mpi-sum
-			      (lparallel:pmap-reduce (lambda (mp)
-				                             (*
-					                            1d0
-					                            (cl-mpm/particle::mp-mass mp)
-					                            (cl-mpm/particle::mp-damage mp)))
-				                           #'+ (cl-mpm:sim-mps *sim*)
-				                           :initial-value 0d0))))
-
+         (damping-0
+            (* 0.1d0
+                ;(cl-mpm::sim-mass-scale *sim*)
+                (cl-mpm/setup::estimate-critical-damping *sim*))
+          )
+         ;(damping-0 (cl-mpm:sim-damping-factor *sim*))
+		 (damage-0
+		   (cl-mpm/mpi:mpi-sum
+		      (lparallel:pmap-reduce (lambda (mp)
+			                             (*
+				                            1d0
+				                            (cl-mpm/particle::mp-mass mp)
+				                            (cl-mpm/particle::mp-damage mp)))
+			                           #'+ (cl-mpm:sim-mps *sim*)
+			                           :initial-value 0d0))))
+    (cl-mpm/output::save-vtk-nodes (merge-pathnames *output-directory* (format nil "sim_nodes_~2,'0d.vtk" rank)) *sim*)
     (setf (cl-mpm:sim-dt *sim*) (cl-mpm/setup::estimate-elastic-dt *sim* :dt-scale dt-scale))
     (setf dt-0 (/ (cl-mpm:sim-dt *sim*) (sqrt (cl-mpm::sim-mass-scale *sim*))))
 
@@ -361,15 +366,16 @@
                      (when (= rank 0)
                        (format t "Step ~d ~%" steps))
                      (when (= (mod steps 1) 0)
-                       (cl-mpm/output:save-vtk (merge-pathnames *output-directory* (format nil "sim_~2,'0d_~5,'0d.vtk" rank *sim-step*)) *sim*))
-					           ;; (when (= rank 0)
-					           ;;  (with-open-file (stream (merge-pathnames *output-directory* "timesteps.csv") :direction :output :if-exists :append)
-                     ;;                                     (format stream "~D,~f,~f,~f,~f~%"
-					           ;;  							                             steps
-					           ;;  							                             *t*
-                     ;;                                             *data-damage*
-                     ;;                                             *data-energy*
-                     ;;                                             *oobf*)))
+                       (cl-mpm/output:save-vtk (merge-pathnames *output-directory* (format nil "sim_~2,'0d_~5,'0d.vtk" rank *sim-step*)) *sim*)
+                       (cl-mpm/output::save-vtk-nodes (merge-pathnames *output-directory* (format nil "sim_nodes_~2,'0d_~5,'0d.vtk" rank *sim-step*)) *sim*)) 
+                     (when (= rank 0)
+                      (with-open-file (stream (merge-pathnames *output-directory* "timesteps.csv") :direction :output :if-exists :append)
+                                                (format stream "~D,~f,~f,~f,~f~%"
+                                                                             steps
+                                                                             *t*
+                                                        *data-damage*
+                                                        *data-energy*
+                                                        *oobf*)))
                      (let ((energy-estimate 0d0)
                            (work 0d0))
                        (rank-0-time
@@ -401,19 +407,24 @@
                            (format t "Total damage: ~E~%" damage-est)))
 
                        (when (= rank 0)
-                         (format t "Energy estimate: ~E~%" energy-estimate))
+                         (format t "Energy estimate: ~E~%" energy-estimate)
+                         (format t "OOBF estimate: ~E~%" *oobf*) )
 
 
                        (when (>= steps settle-steps)
                          (setf (cl-mpm::sim-enable-damage *sim*) t
-                               dt-scale 0.7d0)
+                               ;dt-scale 0.7d0
+                               )
                          (if (or 
-                               (> energy-estimate 1d-3)
-                               (> *oobf* 1d-1))
+                               (> energy-estimate 1d-1)
+                               (> *oobf* 1d-2)
+                               ;(> steps 200)
+                               )
                            (progn
                              (when (= rank 0)
                                (format t "Collapse timestep~%"))
                              (setf
+                               ;dt-scale 0.5d0
                               target-time collapse-target-time
                               (cl-mpm::sim-mass-scale *sim*) collapse-mass-scale))
                            (progn
@@ -421,11 +432,11 @@
                                (format t "Accelerate timestep~%"))
                              (setf
                               target-time 1d1
-                              (cl-mpm::sim-mass-scale *sim*) 1d6)
+                              (cl-mpm::sim-mass-scale *sim*) 1d4)
                              ))))
                      (when (>= steps damp-steps)
                        (setf (cl-mpm:sim-damping-factor *sim*)
-                             0d0
+                             damping-0
                              ;; (* 0.01d0 damping-0)
                              ))
                      (print "calc adaptive")
@@ -444,13 +455,19 @@
                      (when (= rank 0)
                        (format t "CFL dt estimate: ~f~%" (cl-mpm:sim-dt *sim*))
                        (format t "CFL step count estimate: ~D~%" substeps))
+					 (cl-mpm/setup:remove-sdf
+                       *sim*
+                       (lambda (p)
+                         (if (> (magicl:tref p 0 0) *removal-point*)
+                             -1d0
+                             1d0)))
                      (incf *sim-step*)
                      ;; (swank.live:update-swank)
                      )))))
 
 (defparameter *output-directory* (merge-pathnames
-                                  "./output/"
-                                  ;"/nobackup/rmvn14/ham-chalk/output/"
+                                  ;"./output/"
+                                  "/nobackup/rmvn14/ham-slump/"
                                   ))
 (ensure-directories-exist *output-directory*)
 (setf lparallel:*kernel* (lparallel:make-kernel 16 :name "custom-kernel"))
