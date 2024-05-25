@@ -2,9 +2,9 @@
 ;; (sb-ext:restrict-compiler-policy 'debug 0 0)
 ;; (sb-ext:restrict-compiler-policy 'safety 0 0)
 (in-package :cl-mpm/examples/slump)
-(ql:quickload :cl-mpm/buoyancy)
-(ql:quickload :cl-mpm/mpi)
-(ql:quickload :cl-mpm/output)
+;; (ql:quickload :cl-mpm/buoyancy)
+;; (ql:quickload :cl-mpm/mpi)
+;; (ql:quickload :cl-mpm/output)
 
 (defmethod cl-mpm::update-stress-mp (mesh (mp cl-mpm/particle::particle-chalk-delayed) dt fbar)
   (cl-mpm::update-stress-kirchoff-damaged mesh mp dt fbar)
