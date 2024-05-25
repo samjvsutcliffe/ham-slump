@@ -2,6 +2,9 @@
 ;; (sb-ext:restrict-compiler-policy 'debug 0 0)
 ;; (sb-ext:restrict-compiler-policy 'safety 0 0)
 (in-package :cl-mpm/examples/slump)
+(ql:quickload :cl-mpm/buoyancy)
+(ql:quickload :cl-mpm/mpi)
+(ql:quickload :cl-mpm/output)
 
 (defmethod cl-mpm::update-stress-mp (mesh (mp cl-mpm/particle::particle-chalk-delayed) dt fbar)
   (cl-mpm::update-stress-kirchoff-damaged mesh mp dt fbar)
@@ -218,7 +221,7 @@
          (mps-per-cell 2)
          (slope 0d0)
          (shelf-height 400)
-         (shelf-aspect 1)
+         (shelf-aspect 2)
          (runout-aspect 1)
          (shelf-length (* shelf-height shelf-aspect))
          (shelf-end-height (+ shelf-height (* (- slope) shelf-length)))
@@ -369,6 +372,7 @@
                      (when (= (mod steps 1) 0)
                        (cl-mpm/output:save-vtk (merge-pathnames *output-directory* (format nil "sim_~2,'0d_~5,'0d.vtk" rank *sim-step*)) *sim*)
                        (cl-mpm/output::save-vtk-nodes (merge-pathnames *output-directory* (format nil "sim_nodes_~2,'0d_~5,'0d.vtk" rank *sim-step*)) *sim*)) 
+                     (cl-mpm/output::save-vtk-cells (merge-pathnames *output-directory* (format nil "sim_cells_~2,'0d_~5,'0d.vtk" rank *sim-step*)) *sim*)
                      (when (= rank 0)
                       (with-open-file (stream (merge-pathnames *output-directory* "timesteps.csv") :direction :output :if-exists :append)
                                                 (format stream "~D,~f,~f,~f,~f~%"
@@ -482,7 +486,11 @@
                                   "/mnt/d/Temp/ham-slump/"
                                   ))
 (ensure-directories-exist *output-directory*)
-(setf lparallel:*kernel* (lparallel:make-kernel 8 :name "custom-kernel"))
+(let* ((omp-get (uiop:getenv "OMP_NUM_THREADS"))
+       (omp-threads (if omp-get
+                        (parse-integer omp-get)
+                        8)))
+  (setf lparallel:*kernel* (lparallel:make-kernel omp-threads :name "custom-kernel")))
 ;; ;(defparameter *run-sim* nil)
 ;; ;(setup)
 ;; ;(format t "MP count:~D~%" (length (cl-mpm:sim-mps *sim*)))
