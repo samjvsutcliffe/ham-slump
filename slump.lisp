@@ -26,7 +26,7 @@
   (let* ((sim (cl-mpm/setup::make-block
                (/ 1d0 e-scale)
                (mapcar (lambda (x) (* x e-scale)) size)
-               :sim-type 'cl-mpm/mpi::mpm-sim-usl-mpi-nodes-damage
+               :sim-type 'cl-mpm/mpi::mpm-sim-mpi-nodes-damage
                ))
          (h (cl-mpm/mesh:mesh-resolution (cl-mpm:sim-mesh sim)))
          (h-x (/ h 1d0))
@@ -41,7 +41,8 @@
              (init-stress 0.3d6)
              ;; (gf 100d0)
              ;; (ductility (estimate-ductility-jirsek2004 gf length-scale init-stress 1d9))
-             (ductility 8d0)
+             (ductility (cl-mpm/damage::estimate-ductility-jirsek2004 5000d0 length-scale init-stress 1d9))
+             ;; (ductility 8d0)
              )
         (format t "~F ~F ~A mp count"
                 e-scale
@@ -78,7 +79,7 @@
                 :fracture-energy 3000d0
                 :initiation-stress init-stress
 
-                :delay-time 1d3
+                :delay-time 1d1
                 :delay-exponent 2d0
                 :ductility ductility
                 :critical-damage 1d0;(- 1.0d0 1d-3)
@@ -213,11 +214,11 @@
 ;;        (cl-mpm::calculate-forces-cundall node damping dt mass-scale)))))
 
 (defun setup ()
-  (let* ((mesh-size 5)
+  (let* ((mesh-size 20)
          (mps-per-cell 2)
          (slope 0d0)
          (shelf-height 400)
-         (shelf-aspect 2)
+         (shelf-aspect 1)
          (runout-aspect 1)
          (shelf-length (* shelf-height shelf-aspect))
          (shelf-end-height (+ shelf-height (* (- slope) shelf-length)))
@@ -319,9 +320,9 @@
          (collapse-mass-scale 1d0)
          (dt (cl-mpm:sim-dt *sim*))
          (substeps (floor target-time dt))
-         (settle-steps 45)
-         (damp-steps 40)
-         (dt-scale 0.5d0)
+         (settle-steps 25)
+         (damp-steps 20)
+         (dt-scale 0.8d0)
          (dt-0 0d0)
          (damping-0
             (* 0.1d0
@@ -382,14 +383,24 @@
                         rank
                         (dotimes (i substeps)
                           (cl-mpm::update-sim *sim*)
-                          (setf work (cl-mpm/dynamic-relaxation::estimate-power-norm *sim*))
+                          ;; (incf work (cl-mpm/dynamic-relaxation::estimate-power-norm *sim*))
+
+                          (incf work (cl-mpm/dynamic-relaxation::estimate-power-norm *sim*))
                           (incf *oobf* (cl-mpm/dynamic-relaxation::estimate-oobf *sim*))
-                          (when (> work 0d0)
-                            (incf energy-estimate (/ (cl-mpm/dynamic-relaxation::estimate-energy-norm *sim*) work)))
+                          (incf energy-estimate (cl-mpm/dynamic-relaxation::estimate-energy-norm *sim*))
                           (setf *t* (+ *t* (cl-mpm::sim-dt *sim*)))))
 
-                       (setf energy-estimate (/ energy-estimate substeps) 
-                             *oobf* (/ *oobf* substeps) )
+
+                       (setf *oobf* (/ *oobf* substeps)
+                             energy-estimate (/ energy-estimate substeps))
+                       (setf energy-estimate (abs (/ energy-estimate work)))
+                       ;; (setf work (cl-mpm/dynamic-relaxation::estimate-power-norm *sim*))
+                       ;; (setf *oobf* (cl-mpm/dynamic-relaxation::estimate-oobf *sim*))
+                       ;; (when (> work 0d0)
+                       ;;   (setf energy-estimate (/ (cl-mpm/dynamic-relaxation::estimate-energy-norm *sim*) work)))
+
+                       ;; (setf energy-estimate (/ energy-estimate substeps) 
+                       ;;       *oobf* (/ *oobf* substeps) )
 
                        (setf *data-energy* energy-estimate)
                        (let ((damage-est
@@ -416,7 +427,7 @@
                                ;dt-scale 0.7d0
                                )
                          (if (or 
-                               (> energy-estimate 1d-1)
+                               (> energy-estimate 1d-3)
                                (> *oobf* 1d-2)
                                ;(> steps 200)
                                )
@@ -467,10 +478,11 @@
 
 (defparameter *output-directory* (merge-pathnames
                                   ;"./output/"
-                                  "/nobackup/rmvn14/ham-slump/"
+                                  ;; "/nobackup/rmvn14/ham-slump/"
+                                  "/mnt/d/Temp/ham-slump/"
                                   ))
 (ensure-directories-exist *output-directory*)
-(setf lparallel:*kernel* (lparallel:make-kernel 16 :name "custom-kernel"))
+(setf lparallel:*kernel* (lparallel:make-kernel 8 :name "custom-kernel"))
 ;; ;(defparameter *run-sim* nil)
 ;; ;(setup)
 ;; ;(format t "MP count:~D~%" (length (cl-mpm:sim-mps *sim*)))
