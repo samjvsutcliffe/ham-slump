@@ -372,7 +372,7 @@
                      (when (= (mod steps 1) 0)
                        (cl-mpm/output:save-vtk (merge-pathnames *output-directory* (format nil "sim_~2,'0d_~5,'0d.vtk" rank *sim-step*)) *sim*)
                        (cl-mpm/output::save-vtk-nodes (merge-pathnames *output-directory* (format nil "sim_nodes_~2,'0d_~5,'0d.vtk" rank *sim-step*)) *sim*)) 
-                     (cl-mpm/output::save-vtk-cells (merge-pathnames *output-directory* (format nil "sim_cells_~2,'0d_~5,'0d.vtk" rank *sim-step*)) *sim*)
+                     ;; (cl-mpm/output::save-vtk-cells (merge-pathnames *output-directory* (format nil "sim_cells_~2,'0d_~5,'0d.vtk" rank *sim-step*)) *sim*)
                      (when (= rank 0)
                       (with-open-file (stream (merge-pathnames *output-directory* "timesteps.csv") :direction :output :if-exists :append)
                                                 (format stream "~D,~f,~f,~f,~f~%"
@@ -482,8 +482,8 @@
 
 (defparameter *output-directory* (merge-pathnames
                                   ;"./output/"
-                                  ;; "/nobackup/rmvn14/ham-slump/"
-                                  "/mnt/d/Temp/ham-slump/"
+                                  "/nobackup/rmvn14/ham-slump/"
+                                  ;; "/mnt/d/Temp/ham-slump/"
                                   ))
 (ensure-directories-exist *output-directory*)
 (let* ((omp-get (uiop:getenv "OMP_NUM_THREADS"))
