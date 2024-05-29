@@ -73,24 +73,23 @@ plt.rc('axes', labelsize=8)
 width = 3.487
 height = width / 1.618
 
-water_height = 236
 xlim = [0,2600]
 ylim = [0,500]
-with open("output/settings.json") as f:
+output_dir = "/mnt/d/Temp/ham-slump/"
+with open(output_dir+"settings.json") as f:
     json_settings = json.load(f)
-    #print("Water level:{}".format(json_settings["OCEAN-HEIGHT"]))
+    print("Water level:{}".format(json_settings["OCEAN-HEIGHT"]))
     #print("Domain size:{}".format(json_settings["DOMAIN-SIZE"]))
-    #water_height = json_settings["OCEAN-HEIGHT"]
     water_height = 0
     xlim = [0,json_settings["DOMAIN-SIZE"][0]]
     ylim = [0,json_settings["DOMAIN-SIZE"][1]]
+    water_height = json_settings["OCEAN-HEIGHT"]
     #ylim[0] = 20
 
 
 ice_height = 200
 
 plt.close("all")
-output_dir = "./output/"
 files = os.listdir(output_dir)
 finalcsv = re.compile("sim_0+_.*\.vtk")
 files_csvs = list(filter(finalcsv.match,files))
@@ -105,6 +104,8 @@ time = []
 max_stress = []
 damage = []
 full_data = []
+
+timesteps = pd.read_csv(output_dir+"timesteps.csv")
 
 if not NO_OVERWRITE:
     subprocess.run("rm ./outframes/*", shell=True)
@@ -140,7 +141,7 @@ def get_plot(i,fname):
 
     ax.set_xlim(xlim)
     ax.set_ylim(ylim)
-    plt.title("t = {:.2f}s".format(i * dt))
+    plt.title("t = {:.2f}s".format(timesteps["time"].iloc[i]))
     plt.savefig("outframes/frame_{:05}.png".format(i))
     plt.clf()
 
