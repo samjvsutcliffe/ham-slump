@@ -73,8 +73,6 @@ plt.rc('axes', labelsize=8)
 width = 3.487
 height = width / 1.618
 
-
-
 ice_height = 200
 
 plt.close("all")
@@ -93,6 +91,8 @@ with open(output_dir+"settings.json") as f:
     xlim = [0,json_settings["DOMAIN-SIZE"][0]]
     ylim = [0,json_settings["DOMAIN-SIZE"][1]]
     #ylim[0] = 20
+=======
+>>>>>>> refs/remotes/origin/main
 files = os.listdir(output_dir)
 #Grab all files that are unique to first rank
 finalcsv = re.compile("sim(_0+)?_\d+.vtk")
@@ -109,6 +109,8 @@ time = []
 max_stress = []
 damage = []
 full_data = []
+timesteps = pd.read_csv(output_dir+"timesteps.csv")
+
 timesteps = pd.read_csv(output_dir+"timesteps.csv")
 
 if not NO_OVERWRITE:
