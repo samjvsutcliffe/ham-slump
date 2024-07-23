@@ -43,7 +43,10 @@
       (progn
         (when (< damage 1d0)
           (setf damage-increment (cl-mpm/damage::tensile-energy-norm-pressure strain E nu de
-                                                                              (* pressure damage))))
+                                                                              0d0
+                                                                              ;(* pressure damage)
+                                                                              ;pressure
+                                                                              )))
         (when (>= damage 1d0)
           (setf damage-increment 0d0))
         ;;Delocalisation switch
@@ -74,10 +77,11 @@
     (declare (double-float h density))
     (progn
       (let* ((length-scale h)
-             (init-stress 0.3d6)
+            ; (init-stress 0.3d6)
+             (init-stress 0.1d6)
              ;; (gf 100d0)
              ;; (ductility (estimate-ductility-jirsek2004 gf length-scale init-stress 1d9))
-             (ductility (cl-mpm/damage::estimate-ductility-jirsek2004 5000d0 length-scale init-stress 1d9))
+             (ductility (cl-mpm/damage::estimate-ductility-jirsek2004 1000d0 length-scale init-stress 1d9))
              ;; (ductility 8d0)
              )
         (format t "~F ~F ~A mp count"
@@ -106,27 +110,26 @@
                 :E 1d9
                 :nu 0.325d0
                 :enable-plasticity t
-                :friction-angle 80.0d0
+                :friction-angle 50.0d0
 
-                :kt-res-ratio 1d-15
+                :kt-res-ratio 1d-9
                 :kc-res-ratio 1d-2
-                :g-res-ratio 5d-3
+                :g-res-ratio 0.5d-2
 
                 :fracture-energy 3000d0
                 :initiation-stress init-stress
 
-                :delay-time 1d1
-                :delay-exponent 2d0
+                :delay-time 1d4
+                :delay-exponent 3d0
                 :ductility ductility
                 :critical-damage 1d0;(- 1.0d0 1d-3)
-                :damage-domain-rate 0.9d0;This slider changes how GIMP update turns to uGIMP under damage
+                :damage-domain-rate 0.50d0;This slider changes how GIMP update turns to uGIMP under damage
                 :local-length length-scale;(* 0.20d0 (sqrt 7))
                 :local-length-damaged 10d-10
 
                 :psi (* 00d0 (/ pi 180))
                 :phi (* 40d0 (/ pi 180))
                 :c 1000d3
-
                 :gravity -9.8d0
                 ;; :gravity-axis (magicl:from-list '(0.5d0 0.5d0) '(2 1))
                 :index 0
@@ -152,7 +155,7 @@
       (setf (cl-mpm:sim-allow-mp-split sim) nil)
       (setf (cl-mpm::sim-enable-damage sim) nil)
       (setf (cl-mpm::sim-nonlocal-damage sim) t)
-      (setf (cl-mpm::sim-enable-fbar sim) nil)
+      (setf (cl-mpm::sim-enable-fbar sim) t)
       (setf (cl-mpm::sim-allow-mp-damage-removal sim) nil)
       (setf (cl-mpm::sim-mp-damage-removal-instant sim) nil)
       (setf (cl-mpm::sim-mass-filter sim) 1d-10)
@@ -160,8 +163,9 @@
         (setf (cl-mpm::sim-mass-scale sim) mass-scale)
         (setf (cl-mpm:sim-damping-factor sim)
               ;; 0.7d0
-              (* 100d0
-                 (cl-mpm::sim-mass-scale sim)
+              ;1d8
+              (* 0.1d0
+                 (sqrt (cl-mpm::sim-mass-scale sim))
                  (cl-mpm/setup::estimate-critical-damping sim))
               ))
       (let ((dt-scale 0.5d0))
@@ -176,39 +180,55 @@
              (lambda (i) (cl-mpm/bc:make-bc-fixed i '(0 nil nil)))
              (lambda (i) (cl-mpm/bc:make-bc-fixed i '(0 nil nil)))
              (lambda (i) (cl-mpm/bc:make-bc-fixed i '(nil 0 nil)))
-             (lambda (i) (cl-mpm/bc:make-bc-fixed i '(0 0 nil)))
+             (lambda (i) (cl-mpm/bc:make-bc-fixed i '(nil 0 nil)))
              (lambda (i) (cl-mpm/bc:make-bc-fixed i '(nil nil 0)))
              (lambda (i) (cl-mpm/bc:make-bc-fixed i '(nil nil 0)))))
       (let* ((terminus-size (+ (second block-size) (* 0 (first block-size))))
              (ocean-x 1000)
              ;; (ocean-y (+ h-y (* 0.0d0 terminus-size)))
-             (ocean-y (+ h-y (- terminus-size 100d0)))
-             (ocean-y (* (round ocean-y h-y) h-y))
-            )
+             ;(ocean-y (+ (* h-y 2d0) (- terminus-size 110d0)))
+             (ocean-y (+ (* h-y 2d0) (- terminus-size 100d0)))
+             (ocean-y 0d0)
+             (ocean-y (* (round ocean-y h-y) h-y)))
 
         (format t "Ocean level ~a~%" ocean-y)
         (defparameter *water-height* ocean-y)
-        (defparameter *floor-bc*
-          (cl-mpm/penalty::make-bc-penalty-point-normal
+
+        (let ((floor-fric 0.9d0))
+          (defparameter *floor-bc*
+            (cl-mpm/penalty::make-bc-penalty-point-normal
+              sim
+              (cl-mpm/utils:vector-from-list '(0d0 1d0 0d0))
+              (cl-mpm/utils:vector-from-list (list 00d0 (* 2d0 h-y) 0d0))
+              (* 1d9 0.01d0)
+              floor-fric)))
+		(defparameter *melt-bc*
+          (make-bc-water-damage
            sim
-           (cl-mpm/utils:vector-from-list '(0d0 1d0 0d0))
-           (cl-mpm/utils:vector-from-list (list 00d0 (* 2d0 h-y) 0d0))
-           (* 1d9 0.1d0)
-           0.0d0))
+           ocean-y
+           0.01d0
+           ))
+		(loop for mp across (cl-mpm:sim-mps sim)
+              do
+                 (let ((stress (cl-mpm/buoyancy::buoyancy-virtual-stress (magicl:tref (cl-mpm/particle::mp-position mp) 1 0)
+                                                                           ocean-y
+                                                                           *water-density*)))
+                   (setf (cl-mpm/particle::mp-strain mp) (magicl:linear-solve (cl-mpm/particle::mp-elastic-matrix mp) stress))))
         (setf (cl-mpm::sim-bcs-force-list sim)
               (list
+               ;(cl-mpm/bc:make-bcs-from-list
+               ; (list
+               ;  (cl-mpm/buoyancy::make-bc-buoyancy-clip
+               ;   sim
+               ;   ocean-y
+               ;   *water-density*
+               ;   (lambda (pos datum)
+               ;     t
+               ;     ))))
                (cl-mpm/bc:make-bcs-from-list
-                (list
-                 (cl-mpm/buoyancy::make-bc-buoyancy-clip
-                  sim
-                  ocean-y
-                  *water-density*
-                  (lambda (pos datum)
-                    t
-                    ))))
-               (cl-mpm/bc:make-bcs-from-list
-                (list *floor-bc*)
-                )
+                (list *floor-bc*))
+               ;(cl-mpm/bc:make-bcs-from-list
+               ; (list *melt-bc*))
                ))
         )
       (format t "End of setup-test-column~%")
@@ -250,12 +270,12 @@
 ;;        (cl-mpm::calculate-forces-cundall node damping dt mass-scale)))))
 
 (defun setup ()
-  (let* ((mesh-size 10)
-         (mps-per-cell 2)
+  (let* ((mesh-size 5)
+         (mps-per-cell 4)
          (slope 0d0)
-         (shelf-height 400)
+         (shelf-height 100)
          (shelf-aspect 2)
-         (runout-aspect 1)
+         (runout-aspect 4)
          (shelf-length (* shelf-height shelf-aspect))
          (shelf-end-height (+ shelf-height (* (- slope) shelf-length)))
          (shelf-height-terminus shelf-height)
@@ -300,6 +320,8 @@
     (when (= rank 0)
       (format t "Sim MPs: ~a~%" (length (cl-mpm:sim-mps sim)))
       (format t "Decompose~%"))
+    (let ((dhalo-size (* 1 (cl-mpm/particle::mp-local-length (aref (cl-mpm:sim-mps *sim*) 0)))))
+	    (setf (cl-mpm/mpi::mpm-sim-mpi-halo-damage-size *sim*) dhalo-size))
     (cl-mpm/mpi::domain-decompose
      sim
      :domain-scaler
@@ -307,7 +329,7 @@
        (destructuring-bind (x y z) domain
          (let ((dnew (list (mapcar (lambda (p)
                                      (if (< p 1d0)
-                                         (* p (/ 2 3))
+                                         (* p (/ 2 6))
                                          p)) x)
                            y z)))
            (format t "Domain ~A ~A~%" (list x y z) dnew)
@@ -356,15 +378,17 @@
          (collapse-mass-scale 1d0)
          (dt (cl-mpm:sim-dt *sim*))
          (substeps (floor target-time dt))
-         (settle-steps 25)
+         (settle-steps 30)
          (damp-steps 20)
-         (dt-scale 0.8d0)
+         (dt-scale 0.5d0)
          (dt-0 0d0)
          (damping-0
-            (* 0.1d0
+            (* 1d-4
                 ;(cl-mpm::sim-mass-scale *sim*)
                 (cl-mpm/setup::estimate-critical-damping *sim*))
           )
+		 (mass-0
+          (lparallel:pmap-reduce #'cl-mpm/particle::mp-mass #'+ (cl-mpm:sim-mps *sim*)))
          ;(damping-0 (cl-mpm:sim-damping-factor *sim*))
 		 (damage-0
 		   (cl-mpm/mpi:mpi-sum
@@ -375,7 +399,7 @@
 				                            (cl-mpm/particle::mp-damage mp)))
 			                           #'+ (cl-mpm:sim-mps *sim*)
 			                           :initial-value 0d0))))
-    (cl-mpm/output::save-vtk-nodes (merge-pathnames *output-directory* (format nil "sim_nodes_~2,'0d.vtk" rank)) *sim*)
+    ;(cl-mpm/output::save-vtk-nodes (merge-pathnames *output-directory* (format nil "sim_nodes_~2,'0d.vtk" rank)) *sim*)
     (setf (cl-mpm:sim-dt *sim*) (cl-mpm/setup::estimate-elastic-dt *sim* :dt-scale dt-scale))
     (setf dt-0 (/ (cl-mpm:sim-dt *sim*) (sqrt (cl-mpm::sim-mass-scale *sim*))))
 
@@ -393,10 +417,11 @@
       (format t "Substeps ~D~%" substeps)
  	    (cl-mpm/output::save-simulation-parameters (merge-pathnames *output-directory* "settings.json")
                                              *sim*
-                                             (list :dt target-time)) 
+                                             (list :dt target-time
+                                                   :ocean-height *water-height*)) 
 		(with-open-file (stream (merge-pathnames *output-directory* "timesteps.csv") :direction :output :if-exists :supersede)
 			  (format stream "steps,time,damage,energy,oobf~%")))
-    (time (loop for steps from 0 to 400
+    (time (loop for steps from 0 to 1000
                 while *run-sim*
                 do
                    (progn
@@ -404,7 +429,8 @@
                        (format t "Step ~d ~%" steps))
                      (when (= (mod steps 1) 0)
                        (cl-mpm/output:save-vtk (merge-pathnames *output-directory* (format nil "sim_~2,'0d_~5,'0d.vtk" rank *sim-step*)) *sim*)
-                       (cl-mpm/output::save-vtk-nodes (merge-pathnames *output-directory* (format nil "sim_nodes_~2,'0d_~5,'0d.vtk" rank *sim-step*)) *sim*)) 
+                       ;(cl-mpm/output::save-vtk-nodes (merge-pathnames *output-directory* (format nil "sim_nodes_~2,'0d_~5,'0d.vtk" rank *sim-step*)) *sim*)
+                       )
                      ;; (cl-mpm/output::save-vtk-cells (merge-pathnames *output-directory* (format nil "sim_cells_~2,'0d_~5,'0d.vtk" rank *sim-step*)) *sim*)
                      (when (= rank 0)
                       (with-open-file (stream (merge-pathnames *output-directory* "timesteps.csv") :direction :output :if-exists :append)
@@ -430,6 +456,9 @@
 
                        (setf *oobf* (/ *oobf* substeps)
                              energy-estimate (/ energy-estimate substeps))
+
+                      (setf *oobf* (cl-mpm/dynamic-relaxation::estimate-oobf *sim*))
+                      (setf energy-estimate (cl-mpm/dynamic-relaxation::estimate-energy-norm *sim*))
                        (setf energy-estimate (abs (/ energy-estimate work)))
                        ;; (setf work (cl-mpm/dynamic-relaxation::estimate-power-norm *sim*))
                        ;; (setf *oobf* (cl-mpm/dynamic-relaxation::estimate-oobf *sim*))
@@ -465,8 +494,9 @@
                                )
                          (if (or 
                                (> energy-estimate 1d-3)
-                               (> *oobf* 1d-2)
+                               ;(> *oobf* 0.5d0)
                                ;(> steps 200)
+                               ;nil
                                )
                            (progn
                              (when (= rank 0)
@@ -487,7 +517,10 @@
                              damping-0
                              ;; (* 0.01d0 damping-0)
                              ))
-                     (print "calc adaptive")
+				     (format t "Mass loss: ~F~%"
+                              (-
+                               mass-0
+                               (lparallel:pmap-reduce #'cl-mpm/particle::mp-mass #'+ (cl-mpm:sim-mps *sim*))))
                      (multiple-value-bind (dt-e substeps-e)
                          (cl-mpm:calculate-adaptive-time *sim* target-time :dt-scale dt-scale)
                       (when (= rank 0)

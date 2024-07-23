@@ -1,12 +1,12 @@
 #!/bin/bash
 
 # Request resources:
-#SBATCH --time=4:00:0  # 6 hours (hours:minutes:seconds)
+#SBATCH --time=12:00:0  # 6 hours (hours:minutes:seconds)
 #SBATCH -p shared
-#SBATCH -n 8                    # number of MPI ranks
+#SBATCH -n 4                    # number of MPI ranks
 #SBATCH --cpus-per-task=16   # number of MPI ranks per CPU socket
 #SBATCH --mem-per-cpu=1G
-#SBATCH -N 1-8                    # number of compute nodes. 
+#SBATCH -N 1-4                    # number of compute nodes. 
 
 module load gcc
 module load aocl

@@ -12,4 +12,5 @@ module load ffmpeg
 pip install pandas
 pip install vtk
 
+rm outframes/*
 python make_video.py
