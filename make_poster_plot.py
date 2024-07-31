@@ -76,7 +76,7 @@ height = width / 1.618
 ice_height = 200
 
 plt.close("all")
-output_dir = "/mnt/c/Temp/ham-slump/"
+output_dir = "/mnt/d/Temp/ham-slump/"
 #output_dir = "../cl-mpm/output/"
 water_height = 236
 xlim = [0,2600]
@@ -122,9 +122,6 @@ print(ratio)
 scale = 0.5
 fig = plt.figure(figsize=(scale*16,scale*16*ratio),dpi=100)
 def get_plot(i,fname):
-    outname = "outframes/frame_{:05}.png".format(i)
-    if NO_OVERWRITE and os.path.isfile(outname):
-        return
     df = get_data_all(output_dir,fname)
     print("Plot frame {}".format(i),flush=True)
     ax = fig.add_subplot(111,aspect="equal")
@@ -157,12 +154,10 @@ def get_plot(i,fname):
     plt.tight_layout()
     plt.gcf().patch.set_alpha(0)
     plt.savefig("poster{}.pdf".format(fname))
-    plt.show()
-    #plt.clf()
+    # plt.show()
+    plt.clf()
 
 def wrapper(x):
-    get_plot(x[0],x[1])
-#index = 170
-#wrapper((index,files_csvs[index]))
-index = 80
-wrapper((index,files_csvs[index]))
+    get_plot(x,files_csvs[x])
+# wrapper(46)
+wrapper(80)
